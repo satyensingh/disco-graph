@@ -5,6 +5,19 @@ from types import SimpleNamespace
 from app import graphify_service
 
 
+def test_worktree_storage_id_resolves_original_repository_id(tmp_path: Path):
+    repo_id = "c55ed116-5d18-4040-b4de-a2e068850ac5"
+    source_repo = tmp_path / repo_id
+    active_repo = tmp_path / ".disco-graph-worktrees" / f"{repo_id}-task-deadbeef01"
+    active_repo.mkdir(parents=True)
+    (active_repo / ".git").write_text(
+        f"gitdir: {source_repo / '.git' / 'worktrees' / active_repo.name}\n",
+        encoding="utf-8",
+    )
+
+    assert graphify_service._storage_repo_id(active_repo) == repo_id
+
+
 def test_build_graph_invokes_code_only_extract(monkeypatch, tmp_path: Path):
     repo = tmp_path / "repo"
     repo.mkdir()

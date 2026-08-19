@@ -1,5 +1,5 @@
 from typing import Any, Literal
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from .metrics import RunMetrics
 
@@ -108,6 +108,31 @@ class AgentRunResponse(BaseModel):
     worktree: dict[str, Any] | None = None
 
 
+class AgentArgs(BaseModel):
+    """Closed set of arguments exposed to the structured agent decision."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    force: bool | None = None
+    query: str | None = None
+    depth: int | None = Field(default=None, ge=0, le=8)
+    max_nodes: int | None = Field(default=None, ge=1, le=500)
+    relations: list[str] | None = None
+    confidences: list[Literal["EXTRACTED", "INFERRED", "AMBIGUOUS", "UNKNOWN"]] | None = None
+    node: str | None = None
+    source: str | None = None
+    target: str | None = None
+    max_hops: int | None = Field(default=None, ge=1, le=32)
+    symbol: str | None = None
+    max_results: int | None = Field(default=None, ge=1, le=500)
+    max_files: int | None = Field(default=None, ge=1, le=2000)
+    path: str | None = None
+    start_line: int | None = Field(default=None, ge=1)
+    end_line: int | None = Field(default=None, ge=1)
+    patch: str | None = None
+    command: str | None = None
+
+
 class AgentDecision(BaseModel):
     reasoning_summary: str = Field(
         description="A short user-safe explanation of why this next action is useful. Do not reveal private chain-of-thought."
@@ -127,7 +152,7 @@ class AgentDecision(BaseModel):
         "git_diff",
         "finish",
     ]
-    args: dict[str, Any] = Field(default_factory=dict)
+    args: AgentArgs = Field(default_factory=AgentArgs)
     final_answer: str | None = None
 
 

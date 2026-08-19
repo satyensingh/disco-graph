@@ -4,7 +4,7 @@ from typing import Any
 from .config import settings
 from .llm import LLM
 from .metrics import RunMetrics, Timer
-from .models import AgentRunResponse, ToolEvent
+from .models import AgentArgs, AgentRunResponse, ToolEvent
 from .roles import build_roles, role_for_action, select_role
 from . import tools
 from .graphify_service import graph_available
@@ -80,6 +80,12 @@ class CodingAgent:
         raise ValueError(f"Unsupported action: {action}")
 
     @staticmethod
+    def _decision_args(args: AgentArgs | dict[str, Any]) -> dict[str, Any]:
+        if isinstance(args, AgentArgs):
+            return args.model_dump(exclude_none=True)
+        return args
+
+    @staticmethod
     def _history(events: list[ToolEvent]) -> str:
         chunks: list[str] = []
         for e in events:
@@ -129,6 +135,7 @@ class CodingAgent:
             for step in range(1, limit + 1):
                 role_name = select_role(events)
                 decision = self.roles[role_name].decide(task, self._history(events), retrieval_strategy)
+                decision_args = self._decision_args(decision.args)
                 event_role = role_for_action(decision.action, role_name)
                 if decision.action == "finish":
                     diff = tools.git_diff(active_repo)
@@ -145,7 +152,7 @@ class CodingAgent:
                     )
 
                 try:
-                    result = self._execute(active_repo, decision.action, decision.args, retrieval_strategy)
+                    result = self._execute(active_repo, decision.action, decision_args, retrieval_strategy)
                 except Exception as exc:
                     result = f"TOOL_ERROR: {type(exc).__name__}: {exc}"
                 metrics.add_tool_result(result)
@@ -156,7 +163,7 @@ class CodingAgent:
                         action=decision.action,
                         role=event_role,
                         reasoning_summary=decision.reasoning_summary,
-                        args=decision.args,
+                        args=decision_args,
                         result=result,
                     )
                 )

@@ -7,6 +7,17 @@ from app.agent import CodingAgent
 from app.models import AgentDecision
 
 
+def test_agent_decision_schema_closes_tool_args_for_structured_outputs():
+    from openai.lib._pydantic import to_strict_json_schema
+
+    schema = to_strict_json_schema(AgentDecision)
+    args_schema = schema["$defs"]["AgentArgs"]
+
+    assert args_schema["additionalProperties"] is False
+    assert "query" in args_schema["properties"]
+    assert "query" in args_schema["required"]
+
+
 class FakeLLM:
     def __init__(self):
         self.calls = 0

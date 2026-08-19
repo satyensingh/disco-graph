@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import subprocess
 import time
@@ -28,7 +29,19 @@ def graph_html_path(repo: Path) -> Path:
 
 def _storage_repo_id(repo: Path) -> str:
     if repo.parent.name == ".disco-graph-worktrees":
-        return repo.parent.parent.name
+        git_pointer = repo / ".git"
+        if git_pointer.is_file():
+            content = git_pointer.read_text(encoding="utf-8", errors="replace").strip()
+            if content.startswith("gitdir:"):
+                gitdir = Path(content.split(":", 1)[1].strip())
+                if not gitdir.is_absolute():
+                    gitdir = (repo / gitdir).resolve()
+                parents = list(gitdir.parents)
+                if len(parents) > 2:
+                    return parents[2].name
+        match = re.match(r"^([0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})-", repo.name)
+        if match:
+            return match.group(1)
     return repo.name
 
 
