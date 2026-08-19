@@ -1,0 +1,23 @@
+# Local configuration
+.env
+.env.*
+!.env.example
+
+# Cloned repositories, worktrees, and generated graph artifacts
+workspace/
+.disco-graph-worktrees/
+graphify-out/
+graph.json
+minio-data/
+
+# Python and test caches
+__pycache__/
+.pytest_cache/
+*.pyc
+*.pyo
+*.pyd
+.coverage
+htmlcov/
+
+# Local OS/editor files
+.DS_Store

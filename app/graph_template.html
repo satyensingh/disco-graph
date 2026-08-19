@@ -1,0 +1,2255 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>disco-graph</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/graphology/0.25.4/graphology.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/sigma.js/2.4.0/sigma.min.js"></script>
+  <style>
+    :root {
+      color-scheme: light dark;
+      --bg: #f5f7f9;
+      --panel: #ffffff;
+      --stage: #fbfcfe;
+      --text: #16202a;
+      --muted: #5d6b7a;
+      --border: #d8dfe8;
+      --accent: #1f7a8c;
+      --accent-soft: rgba(31, 122, 140, 0.12);
+      --select: #c8394f;
+      --container: rgba(31, 122, 140, 0.045);
+      --container-line: rgba(31, 122, 140, 0.3);
+      --edge: rgba(92, 106, 124, 0.5);
+      --dim: #d3d9e2;
+      --label: #1d2733;
+      --label-halo: rgba(255, 255, 255, 0.85);
+      --shadow: 0 12px 32px rgba(16, 32, 48, 0.14);
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #10151b;
+        --panel: #161d25;
+        --stage: #0c1117;
+        --text: #e6ecf3;
+        --muted: #94a3b4;
+        --border: #26303b;
+        --accent: #57b8cc;
+        --accent-soft: rgba(87, 184, 204, 0.16);
+        --select: #ef6f83;
+        --container: rgba(120, 190, 210, 0.05);
+        --container-line: rgba(120, 190, 210, 0.24);
+        --edge: rgba(150, 170, 195, 0.42);
+        --dim: #2b3644;
+        --label: #dce6f0;
+        --label-halo: rgba(10, 15, 20, 0.85);
+        --shadow: 0 12px 32px rgba(0, 0, 0, 0.55);
+      }
+    }
+    * { box-sizing: border-box; }
+    html, body { height: 100%; }
+    body {
+      margin: 0;
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      height: 100dvh;
+      overflow: hidden;
+      background: var(--bg);
+      color: var(--text);
+      font: 14px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      -webkit-text-size-adjust: 100%;
+    }
+    header {
+      flex: none;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+      padding: 8px 12px;
+      background: var(--panel);
+      border-bottom: 1px solid var(--border);
+      padding-top: max(8px, env(safe-area-inset-top));
+    }
+    .brand { display: flex; align-items: baseline; gap: 10px; min-width: 0; max-width: 100%; }
+    h1 { margin: 0; font-size: 15px; font-weight: 650; white-space: nowrap; flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+    .stat { color: var(--muted); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 0 1 auto; min-width: 0; }
+    .toolbar { display: flex; align-items: center; gap: 8px; flex: 1 1 220px; min-width: 0; }
+    .searchwrap { position: relative; flex: 1 1 auto; min-width: 0; }
+    input, select, button {
+      font: inherit;
+      color: var(--text);
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      height: 38px;
+      padding: 0 10px;
+    }
+    input { width: 100%; }
+    button { cursor: pointer; white-space: nowrap; }
+    button:hover { border-color: var(--accent); }
+    button.primary { background: var(--accent-soft); border-color: var(--accent); }
+    .filters { display: flex; align-items: center; gap: 8px; }
+    .filters label { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: 12px; white-space: nowrap; }
+    #filters-toggle { display: none; }
+    .results {
+      position: absolute;
+      z-index: 8;
+      top: calc(100% + 6px);
+      left: 0;
+      right: 0;
+      min-width: min(360px, calc(100vw - 24px));
+      max-width: calc(100vw - 24px);
+      max-height: min(52vh, 380px);
+      overflow: auto;
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      box-shadow: var(--shadow);
+      padding: 4px;
+    }
+    .results[hidden] { display: none; }
+    .results button {
+      display: block;
+      width: 100%;
+      height: auto;
+      text-align: left;
+      border: none;
+      background: none;
+      border-radius: 6px;
+      padding: 7px 8px;
+      line-height: 1.3;
+      white-space: normal;
+      overflow-wrap: anywhere;
+    }
+    .results button:hover, .results button:focus-visible { background: var(--accent-soft); }
+    .results .sub { display: block; color: var(--muted); font-size: 11px; overflow-wrap: anywhere; }
+    .results .empty { padding: 8px; color: var(--muted); }
+    main { flex: 1 1 auto; display: grid; grid-template-columns: minmax(0, 1fr) 340px; min-height: 0; overflow: hidden; }
+    #stage { position: relative; min-width: 0; overflow: hidden; background: var(--stage); }
+    #graph-container { position: absolute; inset: 0; touch-action: none; cursor: grab; }
+    #graph-container canvas { position: absolute; top: 0; left: 0; display: block; }
+    #graph-container .rings,
+    #graph-container .labels-layer { pointer-events: none; }
+    .crumbs {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      right: 10px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+      align-items: center;
+      pointer-events: none;
+    }
+    .crumbs button {
+      pointer-events: auto;
+      height: 28px;
+      padding: 0 9px;
+      font-size: 12px;
+      border-radius: 999px;
+      background: var(--panel);
+      box-shadow: var(--shadow);
+      max-width: 42vw;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .hud {
+      position: absolute;
+      left: 10px;
+      bottom: 10px;
+      max-width: min(60ch, calc(100% - 100px));
+      padding: 6px 10px;
+      border-radius: 8px;
+      background: var(--panel);
+      border: 1px solid var(--border);
+      color: var(--muted);
+      font-size: 12px;
+      box-shadow: var(--shadow);
+    }
+    .zoomctl { position: absolute; right: 10px; bottom: 10px; display: flex; flex-direction: column; gap: 6px; }
+    .zoomctl button { width: 40px; height: 40px; padding: 0; border-radius: 10px; box-shadow: var(--shadow); font-size: 16px; }
+    aside {
+      border-left: 1px solid var(--border);
+      background: var(--panel);
+      overflow: auto;
+      min-height: 0;
+      padding: 0 14px 16px;
+    }
+    #panel-toggle { display: none; }
+    .section { margin-top: 14px; }
+    .section h2 { margin: 0 0 6px; font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
+    .value { overflow-wrap: anywhere; }
+    .value .name { font-weight: 650; font-size: 15px; }
+    .value .meta { color: var(--muted); font-size: 12px; margin-top: 2px; }
+    .idline { display: flex; gap: 6px; align-items: flex-start; margin-top: 6px; }
+    .idline code { font-size: 11px; color: var(--muted); overflow-wrap: anywhere; }
+    .idline button { height: 26px; padding: 0 8px; font-size: 11px; flex: none; }
+    .actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+    .actions button { height: 34px; font-size: 13px; }
+    .list { display: flex; flex-direction: column; gap: 2px; }
+    .list button {
+      text-align: left;
+      height: auto;
+      padding: 6px 8px;
+      border: none;
+      background: none;
+      border-radius: 6px;
+      line-height: 1.3;
+      white-space: normal;
+      overflow-wrap: anywhere;
+    }
+    .list button:hover, .list button:focus-visible { background: var(--accent-soft); }
+    .list .sub { display: block; color: var(--muted); font-size: 11px; overflow-wrap: anywhere; }
+    .swatch { display: inline-block; width: 9px; height: 9px; border-radius: 3px; margin-right: 7px; vertical-align: baseline; }
+    .hint { color: var(--muted); font-size: 12px; }
+    @media (max-width: 900px) {
+      header { padding: 6px 10px; gap: 8px; }
+      .brand { flex: 1 1 100%; }
+      #filters-toggle { display: inline-block; }
+      .filters {
+        display: none;
+        flex: 1 1 100%;
+        flex-wrap: wrap;
+      }
+      .filters.open { display: flex; }
+      .filters label { flex: 1 1 45%; }
+      .filters select { flex: 1 1 auto; min-width: 0; }
+      main { grid-template-columns: minmax(0, 1fr); }
+      aside {
+        position: fixed;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        z-index: 6;
+        max-height: 58dvh;
+        border-left: none;
+        border-top: 1px solid var(--border);
+        border-radius: 14px 14px 0 0;
+        box-shadow: var(--shadow);
+        transform: translateY(calc(100% - 46px));
+        transition: transform 0.22s ease;
+        padding-bottom: max(16px, env(safe-area-inset-bottom));
+      }
+      aside.open { transform: translateY(0); }
+      #panel-toggle {
+        display: block;
+        position: sticky;
+        top: 0;
+        width: 100%;
+        height: 46px;
+        border: none;
+        background: var(--panel);
+        border-radius: 14px 14px 0 0;
+        font-weight: 600;
+        text-align: left;
+        padding: 0 4px;
+      }
+      .hud { bottom: 58px; font-size: 11px; }
+      .zoomctl { bottom: 58px; }
+      .crumbs button { max-width: 60vw; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      aside { transition: none; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="brand">
+      <h1>disco-graph</h1>
+      <div class="stat" id="counts"></div>
+    </div>
+    <div class="toolbar">
+      <div class="searchwrap">
+        <input id="search" type="search" autocomplete="off" spellcheck="false" placeholder="Search symbols, files, modules">
+        <div class="results" id="results" hidden></div>
+      </div>
+      <button id="filters-toggle" type="button" aria-expanded="false">Filters</button>
+      <div class="filters" id="filters">
+        <label>Relation <select id="relation"></select></label>
+        <label>Confidence <select id="confidence"></select></label>
+        <label>Detail <select id="detail"></select></label>
+        <button id="fit" type="button">Fit</button>
+        <button id="reset" type="button">Reset</button>
+      </div>
+    </div>
+  </header>
+  <main>
+    <div id="stage">
+      <div id="graph-container"></div>
+      <div class="crumbs" id="crumbs"></div>
+      <div class="hud" id="hud"></div>
+      <div class="zoomctl">
+        <button id="zoom-in" type="button" aria-label="Zoom in">+</button>
+        <button id="zoom-out" type="button" aria-label="Zoom out">&minus;</button>
+        <button id="zoom-up" type="button" aria-label="Collapse one level">&uarr;</button>
+      </div>
+    </div>
+    <aside id="panel">
+      <button id="panel-toggle" type="button" aria-expanded="false">Details</button>
+      <div class="section">
+        <h2>Selection</h2>
+        <div class="value" id="selected"></div>
+        <div class="actions" id="actions"></div>
+      </div>
+      <div class="section">
+        <h2 id="connections-title">Connections</h2>
+        <div class="list" id="connections"></div>
+      </div>
+      <div class="section">
+        <h2>Modules</h2>
+        <div class="list" id="legend"></div>
+      </div>
+      <div class="section">
+        <p class="hint">Tap a bubble to open it, tap again on its background to select it. Drag to pan, pinch or scroll to zoom. Focus a symbol to see only its neighbourhood.</p>
+      </div>
+    </aside>
+  </main>
+  <script id="graph-data" type="application/json">__GRAPH_DATA__</script>
+  <script>
+  (function () {
+    "use strict";
+
+    /* ---------------- payload decoding ---------------- */
+
+    const dataElement = document.getElementById("graph-data");
+    const raw = JSON.parse(dataElement.textContent);
+    dataElement.remove();
+
+    function frontDecode(prefixes, suffixes) {
+      const out = new Array(prefixes.length);
+      let previous = "";
+      for (let i = 0; i < prefixes.length; i++) {
+        previous = previous.slice(0, prefixes[i]) + suffixes[i];
+        out[i] = previous;
+      }
+      return out;
+    }
+
+    function expandRuns(runs, length) {
+      const out = new Int32Array(length);
+      let at = 0;
+      for (let i = 0; i < runs.length; i += 2) {
+        for (let repeat = runs[i + 1]; repeat > 0; repeat--) out[at++] = runs[i];
+      }
+      return out;
+    }
+
+    const summary = raw.summary || {};
+    const nodeCount = raw.nodes.count;
+    const nodeId = frontDecode(raw.nodes.idPrefix, raw.nodes.idSuffix);
+    const nodeLabel = frontDecode(raw.nodes.labelPrefix, raw.nodes.labelSuffix);
+    const pathVocabulary = raw.nodes.paths;
+    const pathRuns = raw.nodes.pathRuns;
+    const nodePath = expandRuns(pathRuns, nodeCount);
+    const kindVocabulary = raw.nodes.kinds;
+    const nodeKind = expandRuns(raw.nodes.kindRuns, nodeCount);
+    const relationVocabulary = raw.edges.relations;
+    const confidenceVocabulary = raw.edges.confidences;
+    const edgeSource = Int32Array.from(raw.edges.source);
+    const edgeTarget = Int32Array.from(raw.edges.target);
+    const edgeRelation = Int32Array.from(raw.edges.relation);
+    const edgeConfidence = Int32Array.from(raw.edges.confidence);
+    const edgeCount = edgeSource.length;
+
+    /* ---------------- degrees and adjacency ---------------- */
+
+    const degree = new Int32Array(nodeCount);
+    for (let i = 0; i < edgeCount; i++) {
+      degree[edgeSource[i]]++;
+      degree[edgeTarget[i]]++;
+    }
+    const adjacencyStart = new Int32Array(nodeCount + 1);
+    for (let i = 0; i < nodeCount; i++) adjacencyStart[i + 1] = adjacencyStart[i] + degree[i];
+    const adjacencyNode = new Int32Array(edgeCount * 2);
+    const adjacencyEdge = new Int32Array(edgeCount * 2);
+    {
+      const cursor = adjacencyStart.slice(0, nodeCount);
+      for (let i = 0; i < edgeCount; i++) {
+        const source = edgeSource[i];
+        const target = edgeTarget[i];
+        adjacencyNode[cursor[source]] = target;
+        adjacencyEdge[cursor[source]++] = i;
+        adjacencyNode[cursor[target]] = source;
+        adjacencyEdge[cursor[target]++] = i;
+      }
+    }
+
+    /* ---------------- folder tree ---------------- */
+
+    const clusterName = [];
+    const clusterParent = [];
+    const clusterKind = [];
+    const clusterChildren = [];
+    const clusterOwnStart = [];
+    const clusterOwnEnd = [];
+    const clusterWeight = [];
+    const clusterDepth = [];
+    const clusterModule = [];
+    const childLookup = [];
+
+    function addCluster(name, parent, kind) {
+      const index = clusterName.length;
+      clusterName.push(name);
+      clusterParent.push(parent);
+      clusterKind.push(kind);
+      clusterChildren.push([]);
+      clusterOwnStart.push(-1);
+      clusterOwnEnd.push(-1);
+      clusterWeight.push(0);
+      clusterDepth.push(parent < 0 ? 0 : clusterDepth[parent] + 1);
+      clusterModule.push(clusterDepth[index] === 1 ? index : (parent < 0 ? -1 : clusterModule[parent]));
+      childLookup.push(null);
+      if (parent >= 0) {
+        clusterChildren[parent].push(index);
+        if (!childLookup[parent]) childLookup[parent] = new Map();
+        childLookup[parent].set(name, index);
+      }
+      return index;
+    }
+
+    const rootCluster = addCluster("", -1, "root");
+    const nodeCluster = new Int32Array(nodeCount);
+    {
+      let offset = 0;
+      for (let i = 0; i < pathRuns.length; i += 2) {
+        const path = pathVocabulary[pathRuns[i]] || "";
+        const count = pathRuns[i + 1];
+        const segments = path ? path.split("/").filter(Boolean) : [];
+        if (!segments.length) segments.push("(no source file)");
+        let current = rootCluster;
+        for (let s = 0; s < segments.length; s++) {
+          const last = s === segments.length - 1;
+          const lookup = childLookup[current];
+          let next = lookup ? lookup.get(segments[s]) : undefined;
+          if (next === undefined) next = addCluster(segments[s], current, last ? "file" : "dir");
+          else if (!last) clusterKind[next] = "dir";
+          current = next;
+        }
+        clusterOwnStart[current] = offset;
+        clusterOwnEnd[current] = offset + count;
+        for (let n = offset; n < offset + count; n++) nodeCluster[n] = current;
+        offset += count;
+      }
+    }
+    const clusterTotal = clusterName.length;
+    for (let c = clusterTotal - 1; c >= 0; c--) {
+      let weight = clusterOwnEnd[c] > clusterOwnStart[c] ? clusterOwnEnd[c] - clusterOwnStart[c] : 0;
+      const children = clusterChildren[c];
+      for (let i = 0; i < children.length; i++) weight += clusterWeight[children[i]];
+      clusterWeight[c] = weight;
+    }
+
+    /* Collapse single-child folder chains so `src/main/java/com/acme` is one crumb. */
+    const displayTarget = new Int32Array(clusterTotal);
+    const displayRoot = new Int32Array(clusterTotal);
+    const displayLabel = new Array(clusterTotal);
+    for (let c = 0; c < clusterTotal; c++) {
+      displayTarget[c] = c;
+      displayRoot[c] = c;
+      displayLabel[c] = clusterName[c];
+    }
+    for (let c = 1; c < clusterTotal; c++) {
+      if (displayRoot[c] !== c) continue;
+      let cursor = c;
+      let label = clusterName[c];
+      while (clusterOwnStart[cursor] < 0 && clusterChildren[cursor].length === 1) {
+        const only = clusterChildren[cursor][0];
+        displayRoot[only] = c;
+        label += "/" + clusterName[only];
+        cursor = only;
+      }
+      displayTarget[c] = cursor;
+      displayLabel[c] = label;
+    }
+
+    function displayPath(cluster) {
+      const parts = [];
+      let c = displayRoot[cluster];
+      while (c > 0) {
+        parts.push(displayLabel[c]);
+        c = displayRoot[clusterParent[c]];
+      }
+      return parts.reverse().join("/");
+    }
+
+    function ancestry(cluster) {
+      const chain = [];
+      let c = displayRoot[cluster];
+      while (c > 0) {
+        chain.push(c);
+        c = displayRoot[clusterParent[c]];
+      }
+      return chain.reverse();
+    }
+
+    /* ---------------- palette ---------------- */
+
+    const PALETTE = [
+      "#2f7f9b", "#c1663f", "#3f8f5f", "#8a6bbf", "#b0873a", "#c05572",
+      "#3d7fbf", "#5f8f3f", "#a35fa3", "#4f8f8f", "#9b6a4a", "#6f6fbf"
+    ];
+    const moduleClusters = clusterChildren[rootCluster]
+      .slice()
+      .sort((a, b) => clusterWeight[b] - clusterWeight[a]);
+    const moduleColor = new Map();
+    moduleClusters.forEach((cluster, i) => moduleColor.set(cluster, PALETTE[i % PALETTE.length]));
+
+    function colorOfCluster(cluster) {
+      return moduleColor.get(clusterModule[cluster] >= 0 ? clusterModule[cluster] : cluster) || PALETTE[0];
+    }
+    function colorOfNode(node) {
+      return colorOfCluster(nodeCluster[node]);
+    }
+
+    /* ---------------- view state ---------------- */
+
+    const DETAIL_LEVELS = {
+      low: { maxChildren: 16, maxEdges: 600, labels: 120 },
+      medium: { maxChildren: 36, maxEdges: 1800, labels: 240 },
+      high: { maxChildren: 80, maxEdges: 5000, labels: 400 }
+    };
+    const smallScreen = window.matchMedia("(max-width: 900px)").matches;
+
+    const state = {
+      expanded: new Set(),
+      expansionOrder: [],
+      capBoost: new Map(),
+      detail: smallScreen ? "low" : "medium",
+      relation: -1,
+      confidence: -1,
+      focusNode: -1,
+      focusDepth: 1,
+      revealNode: -1,
+      selected: null
+    };
+
+    let items = [];
+    let containers = [];
+    let aggregated = [];
+    let hiddenLinks = 0;
+    let neighbourItems = null;
+    const representative = new Int32Array(nodeCount);
+    const itemOfCluster = new Int32Array(clusterTotal);
+    const MIN_ZOOM = 0.02;
+    const MAX_ZOOM = 60;
+    const TAU = Math.PI * 2;
+    const LABEL_FONT = "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif";
+    const reducedMotion = window.matchMedia
+      ? window.matchMedia("(prefers-reduced-motion: reduce)")
+      : { matches: false };
+    let rendererNotice = "";
+
+    function detail() {
+      return DETAIL_LEVELS[state.detail] || DETAIL_LEVELS.medium;
+    }
+
+    /* ---------------- layout ---------------- */
+
+    function collapsedRadius(weight) {
+      /* Softer than sqrt on purpose: a folder holding most of a repository must not
+         grow so large that its siblings become invisible specks. */
+      return 3.2 + 2.6 * Math.pow(Math.max(1, weight), 0.42);
+    }
+    function leafRadius(node) {
+      return 2.6 + Math.min(5.5, Math.log2(1 + degree[node]) * 1.05);
+    }
+
+    function packCircles(radii) {
+      const count = radii.length;
+      const xs = new Float64Array(count);
+      const ys = new Float64Array(count);
+      if (count === 0) return { xs: xs, ys: ys, bound: 8 };
+      const order = Array.from({ length: count }, (unused, i) => i).sort((a, b) => radii[b] - radii[a]);
+      const gap = Math.max(1.2, radii[order[0]] * 0.07);
+      let ringStart = radii[order[0]] + gap;
+      let index = 1;
+      while (index < count) {
+        const first = index;
+        const rho = ringStart + radii[order[index]];
+        let ringMax = 0;
+        let angle = 0;
+        while (index < count) {
+          const radius = radii[order[index]];
+          const half = Math.asin(Math.min(0.999, (radius + gap) / Math.max(rho, radius + gap)));
+          const step = Math.max(2 * half, 0.04);
+          if (index > first && angle + step > TAU) break;
+          const at = angle + half;
+          xs[order[index]] = Math.cos(at) * rho;
+          ys[order[index]] = Math.sin(at) * rho;
+          if (radius > ringMax) ringMax = radius;
+          angle += step;
+          index++;
+        }
+        ringStart = rho + ringMax + gap;
+      }
+      let bound = 1;
+      for (let i = 0; i < count; i++) {
+        bound = Math.max(bound, Math.hypot(xs[i], ys[i]) + radii[i]);
+      }
+      return { xs: xs, ys: ys, bound: bound };
+    }
+
+    function childrenOf(cluster) {
+      const target = displayTarget[cluster];
+      const clusters = clusterChildren[target]
+        .slice()
+        .sort((a, b) => clusterWeight[b] - clusterWeight[a])
+        .map(function (index) {
+          return { type: "cluster", index: index, weight: clusterWeight[index] };
+        });
+      const symbols = [];
+      if (clusterOwnStart[target] >= 0) {
+        for (let n = clusterOwnStart[target]; n < clusterOwnEnd[target]; n++) symbols.push(n);
+        symbols.sort((a, b) => degree[b] - degree[a]);
+      }
+      const entries = clusters.concat(symbols.map(function (index) {
+        return { type: "node", index: index, weight: 1 };
+      }));
+      const cap = Math.round(detail().maxChildren * (state.capBoost.get(cluster) || 1));
+      if (entries.length <= cap) return entries;
+      /* Whatever the user opened or asked to be shown stays visible; only the rest
+         competes for the remaining slots. */
+      const pinned = [];
+      const rest = [];
+      for (let i = 0; i < entries.length; i++) {
+        const entry = entries[i];
+        const isPinned = entry.type === "cluster"
+          ? state.expanded.has(entry.index)
+          : entry.index === state.revealNode;
+        if (isPinned) pinned.push(entry);
+        else rest.push(entry);
+      }
+      const room = Math.max(0, cap - 1 - pinned.length);
+      const kept = pinned.concat(rest.slice(0, room));
+      rest.splice(0, room);
+      if (!rest.length) return kept;
+      const more = { type: "more", clusters: [], nodes: [], weight: 0, owner: cluster };
+      for (let i = 0; i < rest.length; i++) {
+        if (rest[i].type === "cluster") more.clusters.push(rest[i].index);
+        else more.nodes.push(rest[i].index);
+        more.weight += rest[i].weight;
+      }
+      more.hidden = rest.length;
+      kept.push(more);
+      return kept;
+    }
+
+    const plan = new Map();
+
+    function measureCluster(cluster) {
+      const kids = childrenOf(cluster);
+      const radii = kids.map(function (kid) {
+        if (kid.type === "cluster") {
+          return state.expanded.has(kid.index) ? measureCluster(kid.index) : collapsedRadius(kid.weight);
+        }
+        if (kid.type === "more") return collapsedRadius(kid.weight);
+        return leafRadius(kid.index);
+      });
+      const packed = packCircles(radii);
+      const radius = packed.bound * 1.12 + 9;
+      plan.set(cluster, { kids: kids, radii: radii, packed: packed, radius: radius });
+      return radius;
+    }
+
+    function placeCluster(cluster, cx, cy) {
+      const entry = plan.get(cluster);
+      containers.push({ cluster: cluster, x: cx, y: cy, radius: entry.radius });
+      for (let i = 0; i < entry.kids.length; i++) {
+        const kid = entry.kids[i];
+        const x = cx + entry.packed.xs[i];
+        const y = cy + entry.packed.ys[i];
+        if (kid.type === "cluster" && state.expanded.has(kid.index)) {
+          placeCluster(kid.index, x, y);
+          continue;
+        }
+        items.push({
+          type: kid.type,
+          index: kid.index,
+          clusters: kid.clusters,
+          nodes: kid.nodes,
+          owner: kid.owner,
+          hidden: kid.hidden,
+          weight: kid.weight,
+          x: x,
+          y: y,
+          radius: entry.radii[i]
+        });
+      }
+    }
+
+    function buildHierarchyView() {
+      plan.clear();
+      items = [];
+      containers = [];
+      measureCluster(rootCluster);
+      placeCluster(rootCluster, 0, 0);
+      items.forEach(function (item, i) {
+        item.itemIndex = i;
+        if (item.type === "cluster") {
+          item.label = displayLabel[item.index];
+          item.color = colorOfCluster(item.index);
+        } else if (item.type === "node") {
+          item.label = nodeLabel[item.index];
+          item.color = colorOfNode(item.index);
+        } else {
+          item.label = "+" + item.hidden + " more";
+          item.color = "#8a95a5";
+        }
+      });
+      assignRepresentatives();
+    }
+
+    function assignRepresentatives() {
+      itemOfCluster.fill(-1);
+      for (let i = 0; i < items.length; i++) {
+        const item = items[i];
+        if (item.type === "cluster") itemOfCluster[item.index] = i;
+        else if (item.type === "more" && item.clusters) {
+          for (let c = 0; c < item.clusters.length; c++) itemOfCluster[item.clusters[c]] = i;
+        }
+      }
+      for (let c = 1; c < clusterTotal; c++) {
+        if (itemOfCluster[c] === -1) itemOfCluster[c] = itemOfCluster[clusterParent[c]];
+      }
+      for (let n = 0; n < nodeCount; n++) representative[n] = itemOfCluster[nodeCluster[n]];
+      for (let i = 0; i < items.length; i++) {
+        const item = items[i];
+        if (item.type === "node") representative[item.index] = i;
+        else if (item.type === "more" && item.nodes) {
+          for (let n = 0; n < item.nodes.length; n++) representative[item.nodes[n]] = i;
+        }
+      }
+    }
+
+    function neighbourhood(node, depth, budget) {
+      const distance = new Map([[node, 0]]);
+      let frontier = [node];
+      for (let level = 0; level < depth; level++) {
+        const next = [];
+        for (let f = 0; f < frontier.length; f++) {
+          const current = frontier[f];
+          for (let a = adjacencyStart[current]; a < adjacencyStart[current + 1]; a++) {
+            const other = adjacencyNode[a];
+            if (distance.has(other)) continue;
+            distance.set(other, level + 1);
+            next.push(other);
+          }
+        }
+        next.sort((a, b) => degree[b] - degree[a]);
+        const room = Math.max(0, budget - distance.size + next.length);
+        if (next.length > room) {
+          for (let i = room; i < next.length; i++) distance.delete(next[i]);
+          next.length = room;
+        }
+        frontier = next;
+        if (!frontier.length) break;
+      }
+      return distance;
+    }
+
+    function buildFocusView() {
+      const budget = state.focusDepth > 1 ? 220 : 110;
+      const distance = neighbourhood(state.focusNode, state.focusDepth, budget);
+      const rings = [];
+      distance.forEach(function (level, node) {
+        while (rings.length <= level) rings.push([]);
+        rings[level].push(node);
+      });
+      items = [];
+      containers = [];
+      rings.forEach(function (ring, level) {
+        ring.sort(function (a, b) {
+          const moduleDelta = clusterModule[nodeCluster[a]] - clusterModule[nodeCluster[b]];
+          return moduleDelta !== 0 ? moduleDelta : degree[b] - degree[a];
+        });
+        const radius = level === 0 ? 0 : 90 * level + 30;
+        ring.forEach(function (node, i) {
+          const angle = ring.length > 1 ? (TAU * i) / ring.length : 0;
+          items.push({
+            type: "node",
+            index: node,
+            x: Math.cos(angle) * radius,
+            y: Math.sin(angle) * radius,
+            radius: level === 0 ? 9 : leafRadius(node) + 1.5,
+            label: nodeLabel[node],
+            color: colorOfNode(node),
+            level: level
+          });
+        });
+      });
+      items.forEach(function (item, i) { item.itemIndex = i; });
+      representative.fill(-1);
+      for (let i = 0; i < items.length; i++) representative[items[i].index] = i;
+    }
+
+    function aggregateLinks() {
+      const map = new Map();
+      const span = Math.max(1, items.length);
+      for (let i = 0; i < edgeCount; i++) {
+        if (state.relation >= 0 && edgeRelation[i] !== state.relation) continue;
+        if (state.confidence >= 0 && edgeConfidence[i] !== state.confidence) continue;
+        const a = representative[edgeSource[i]];
+        const b = representative[edgeTarget[i]];
+        if (a < 0 || b < 0 || a === b) continue;
+        const low = a < b ? a : b;
+        const high = a < b ? b : a;
+        const key = low * span + high;
+        const found = map.get(key);
+        if (found) {
+          found.count++;
+          if (edgeRelation[i] < 30) found.relations |= 1 << edgeRelation[i];
+        } else {
+          map.set(key, {
+            a: low,
+            b: high,
+            count: 1,
+            relations: edgeRelation[i] < 30 ? 1 << edgeRelation[i] : 0
+          });
+        }
+      }
+      aggregated = Array.from(map.values()).sort((x, y) => y.count - x.count);
+      hiddenLinks = 0;
+      const limit = detail().maxEdges;
+      if (aggregated.length > limit) {
+        hiddenLinks = aggregated.length - limit;
+        aggregated.length = limit;
+      }
+      neighbourItems = null;
+    }
+
+    function rebuild(options) {
+      if (state.focusNode >= 0) buildFocusView();
+      else buildHierarchyView();
+      aggregateLinks();
+      if (state.selected) reselect();
+      renderChrome();
+      if (renderer) renderer.sync();
+      if (options && options.fit) fitAll();
+    }
+
+    function reselect() {
+      const previous = state.selected;
+      state.selected = null;
+      for (let i = 0; i < items.length; i++) {
+        const item = items[i];
+        if (previous.type !== item.type) continue;
+        if (previous.type === "more" ? previous.owner === item.owner : previous.index === item.index) {
+          state.selected = item;
+          break;
+        }
+      }
+      if (state.selected) return;
+      if (previous.type === "container") state.selected = previous;
+      else if (previous.type === "cluster" && state.expanded.has(previous.index)) {
+        state.selected = { type: "container", index: previous.index };
+      }
+    }
+
+    /* ---------------- shared drawing ---------------- */
+
+    const stage = document.getElementById("stage");
+    const graphContainer = document.getElementById("graph-container");
+    const theme = {};
+    let hovered = null;
+    let renderer = null;
+
+    function readTheme() {
+      const styles = getComputedStyle(document.documentElement);
+      theme.stage = styles.getPropertyValue("--stage").trim() || "#fff";
+      theme.container = styles.getPropertyValue("--container").trim();
+      theme.containerLine = styles.getPropertyValue("--container-line").trim();
+      theme.edge = styles.getPropertyValue("--edge").trim();
+      theme.label = styles.getPropertyValue("--label").trim();
+      theme.halo = styles.getPropertyValue("--label-halo").trim();
+      theme.select = styles.getPropertyValue("--select").trim();
+      theme.muted = styles.getPropertyValue("--muted").trim();
+      theme.dim = styles.getPropertyValue("--dim").trim();
+    }
+
+    function fontOf(size) {
+      return size + "px " + LABEL_FONT;
+    }
+
+    /* The label pass re-measures every frame while panning, so keep the widths. */
+    const textWidths = new Map();
+
+    function measureText(context, text, size) {
+      const key = size + "|" + text;
+      let width = textWidths.get(key);
+      if (width === undefined) {
+        context.font = fontOf(size);
+        width = context.measureText(text).width;
+        textWidths.set(key, width);
+      }
+      return width;
+    }
+
+    function highlightSet() {
+      const anchor = state.selected && state.selected.itemIndex !== undefined
+        ? state.selected
+        : hovered;
+      if (!anchor || anchor.itemIndex === undefined) return null;
+      if (neighbourItems && neighbourItems.anchor === anchor.itemIndex) return neighbourItems;
+      const set = new Set([anchor.itemIndex]);
+      for (let i = 0; i < aggregated.length; i++) {
+        const link = aggregated[i];
+        if (link.a === anchor.itemIndex) set.add(link.b);
+        else if (link.b === anchor.itemIndex) set.add(link.a);
+      }
+      neighbourItems = { anchor: anchor.itemIndex, set: set };
+      return neighbourItems;
+    }
+
+    /* Both renderers label bubbles the same way: a name goes inside a roomy bubble,
+       dropping a step in type size if that is what makes it fit, and otherwise onto a
+       pill underneath so it stays readable where it falls over a neighbour. */
+    function planLabel(context, text, x, y, radius, viewportWidth, viewportHeight, placement) {
+      const clipped = text.length > 34 ? text.slice(0, 33) + "…" : text;
+      let size = Math.max(10, Math.min(15, 9 + radius * 0.16));
+      let textWidth = measureText(context, clipped, size);
+      let inside = false;
+      if (placement === "inside" && radius >= 22) {
+        if (textWidth <= radius * 1.8) {
+          inside = true;
+        } else if (size > 11) {
+          const narrow = measureText(context, clipped, 11);
+          if (narrow <= radius * 1.8) {
+            inside = true;
+            size = 11;
+            textWidth = narrow;
+          }
+        }
+      }
+      if (placement === "inside" && !inside) return null;
+      const half = textWidth / 2;
+      let anchorX = x;
+      let anchorY = y;
+      if (inside) {
+        /* Zoomed far enough in, a bubble can cover the screen with its centre off it.
+           Slide the name back into view, but never outside its own circle. */
+        const clampedX = Math.max(half + 8, Math.min(viewportWidth - half - 8, x));
+        const clampedY = Math.max(size + 8, Math.min(viewportHeight - size - 8, y));
+        const shift = Math.hypot(clampedX - x, clampedY - y);
+        const limit = Math.max(0, radius - half - 6);
+        if (shift > limit && shift > 0) {
+          anchorX = x + ((clampedX - x) / shift) * limit;
+          anchorY = y + ((clampedY - y) / shift) * limit;
+        } else {
+          anchorX = clampedX;
+          anchorY = clampedY;
+        }
+      }
+      const top = inside
+        ? anchorY - size / 2
+        : (placement === "above" ? y - radius - size - 5 : y + radius + 3);
+      const left = inside ? anchorX : Math.max(half + 6, Math.min(viewportWidth - half - 6, x));
+      return {
+        text: clipped,
+        size: size,
+        inside: inside,
+        x: left,
+        top: top,
+        left: left - half - 3,
+        right: left + half + 3,
+        bottom: top + size + 3
+      };
+    }
+
+    /* One label pass for both renderers. Names are placed biggest-bubble-first so the
+       choice is stable while panning and zooming -- inside the bubble when it is roomy,
+       otherwise below it, otherwise above it -- and a name is only dropped when all
+       three would collide with one already written. */
+    function paintLabels(context, project, scale, viewportWidth, viewportHeight) {
+      const highlight = highlightSet();
+      const candidates = [];
+      for (let i = 0; i < items.length; i++) {
+        if (highlight && !highlight.set.has(i)) continue;
+        const item = items[i];
+        const radius = Math.max(1.4, item.radius * scale);
+        const selected = state.selected && state.selected.itemIndex === i;
+        const focused = selected || hovered === item;
+        if (!focused && radius < 5) continue;
+        const point = project(item.x, item.y);
+        if (point.x + radius < 0 || point.x - radius > viewportWidth) continue;
+        if (point.y + radius < 0 || point.y - radius > viewportHeight) continue;
+        candidates.push({
+          x: point.x,
+          y: point.y,
+          radius: radius,
+          text: item.label,
+          weight: focused ? 1e9 : radius
+        });
+      }
+      candidates.sort(function (a, b) { return b.weight - a.weight; });
+      const budget = detail().labels;
+      const placed = [];
+      for (let i = 0; i < candidates.length && placed.length < budget; i++) {
+        const candidate = candidates[i];
+        for (let attempt = 0; attempt < 3; attempt++) {
+          const plan = planLabel(
+            context,
+            candidate.text,
+            candidate.x,
+            candidate.y,
+            candidate.radius,
+            viewportWidth,
+            viewportHeight,
+            attempt === 0 ? "inside" : (attempt === 1 ? "below" : "above")
+          );
+          if (!plan) continue;
+          /* No point spending the budget on a name that lands off screen. */
+          if (plan.right < 0 || plan.left > viewportWidth) continue;
+          if (plan.bottom < 0 || plan.top > viewportHeight) continue;
+          let clashes = false;
+          for (let p = 0; p < placed.length; p++) {
+            const other = placed[p];
+            if (plan.left < other.right && plan.right > other.left
+              && plan.top < other.bottom && plan.bottom > other.top) {
+              clashes = true;
+              break;
+            }
+          }
+          if (clashes) continue;
+          placed.push(plan);
+          paintLabel(context, plan);
+          break;
+        }
+      }
+    }
+
+    function paintLabel(context, plan) {
+      context.font = fontOf(plan.size);
+      context.textAlign = "center";
+      context.textBaseline = "top";
+      if (plan.inside) {
+        context.lineWidth = 3;
+        context.strokeStyle = "rgba(0, 0, 0, 0.4)";
+        context.strokeText(plan.text, plan.x, plan.top);
+        context.fillStyle = "#ffffff";
+      } else {
+        context.fillStyle = theme.halo;
+        context.beginPath();
+        const width = plan.right - plan.left;
+        const height = plan.bottom - plan.top + 2;
+        if (context.roundRect) context.roundRect(plan.left, plan.top - 2, width, height, 4);
+        else context.rect(plan.left, plan.top - 2, width, height);
+        context.fill();
+        context.fillStyle = theme.label;
+      }
+      context.fillText(plan.text, plan.x, plan.top);
+    }
+
+    function linkWidth(count) {
+      return Math.min(3.5, 0.6 + Math.log2(1 + count) * 0.5);
+    }
+
+    /* Extent of what is on screen, radii included -- Sigma normalises on node
+       centres alone, so both renderers frame the view from this instead. */
+    function viewBox() {
+      const shapes = items.length ? items : containers;
+      let minX = Infinity;
+      let minY = Infinity;
+      let maxX = -Infinity;
+      let maxY = -Infinity;
+      for (let i = 0; i < shapes.length; i++) {
+        const shape = shapes[i];
+        minX = Math.min(minX, shape.x - shape.radius);
+        minY = Math.min(minY, shape.y - shape.radius);
+        maxX = Math.max(maxX, shape.x + shape.radius);
+        maxY = Math.max(maxY, shape.y + shape.radius);
+      }
+      if (!isFinite(minX)) return null;
+      return { minX: minX, minY: minY, maxX: maxX, maxY: maxY };
+    }
+
+    function containerAtWorld(x, y) {
+      let best = null;
+      for (let i = 0; i < containers.length; i++) {
+        const container = containers[i];
+        if (container.cluster === rootCluster) continue;
+        if (Math.hypot(container.x - x, container.y - y) <= container.radius) {
+          if (!best || container.radius < best.radius) best = container;
+        }
+      }
+      return best;
+    }
+
+    /* Folder rings are drawn from world coordinates by both renderers. */
+    function paintRings(context, project, scale, viewportWidth, viewportHeight) {
+      context.lineWidth = 1;
+      for (let i = 0; i < containers.length; i++) {
+        const container = containers[i];
+        if (container.cluster === rootCluster) continue;
+        const radius = container.radius * scale;
+        if (radius < 7) continue;
+        const point = project(container.x, container.y);
+        if (point.x + radius < 0 || point.x - radius > viewportWidth) continue;
+        if (point.y + radius < 0 || point.y - radius > viewportHeight) continue;
+        context.beginPath();
+        context.arc(point.x, point.y, radius, 0, TAU);
+        context.fillStyle = theme.container;
+        context.fill();
+        context.strokeStyle = state.selected
+          && state.selected.type === "container"
+          && state.selected.index === container.cluster
+          ? theme.select
+          : theme.containerLine;
+        context.stroke();
+      }
+    }
+
+    function surfaceCanvas(container, className) {
+      const canvas = document.createElement("canvas");
+      canvas.className = className;
+      container.appendChild(canvas);
+      return canvas;
+    }
+
+    function fitCanvasToBox(canvas, width, height) {
+      const pixelRatio = Math.min(2.5, window.devicePixelRatio || 1);
+      const targetWidth = Math.max(1, Math.round(width * pixelRatio));
+      const targetHeight = Math.max(1, Math.round(height * pixelRatio));
+      if (canvas.width !== targetWidth) canvas.width = targetWidth;
+      if (canvas.height !== targetHeight) canvas.height = targetHeight;
+      canvas.style.width = width + "px";
+      canvas.style.height = height + "px";
+      return pixelRatio;
+    }
+
+    /* ---------------- Sigma.js renderer ---------------- */
+
+    function createSigmaRenderer(container) {
+      if (!window.graphology || !window.Sigma) {
+        throw new Error("Sigma.js or Graphology failed to load");
+      }
+      const GraphConstructor = window.graphology.Graph || window.graphology;
+      const graph = new GraphConstructor({ type: "undirected", multi: false, allowSelfLoops: false });
+      /* Appended before Sigma builds its own canvases, so the rings stay underneath. */
+      const rings = surfaceCanvas(container, "rings");
+      const ringContext = rings.getContext("2d");
+      /* Sigma scales node sizes by 1/sqrt(cameraRatio) while positions scale by
+         1/cameraRatio. Multiplying by this factor -- refreshed whenever the zoom
+         moves materially -- keeps bubbles the size their packing says they are. */
+      let sizeScale = 1;
+      let pointerActive = false;
+      let settleTimer = null;
+
+      const sigma = new window.Sigma(graph, container, {
+        allowInvalidContainer: true,
+        minCameraRatio: 0.01,
+        maxCameraRatio: 20,
+        /* Sigma buckets label candidates in a grid built from the un-zoomed layout,
+           so which names survive shifts as you pan. Labels are drawn on our own
+           layer instead, from the same pass the built-in renderer uses. */
+        renderLabels: false,
+        renderEdgeLabels: false,
+        enableEdgeClickEvents: false,
+        defaultNodeColor: theme.muted,
+        defaultEdgeColor: theme.edge,
+        nodeReducer: reduceNode,
+        edgeReducer: reduceEdge
+      });
+
+      /* Appended after construction so it sits above everything Sigma draws. */
+      const labels = surfaceCanvas(container, "labels-layer");
+      const labelContext = labels.getContext("2d");
+
+      function dimensions() {
+        const size = sigma.getDimensions();
+        return { width: Math.max(1, size.width), height: Math.max(1, size.height) };
+      }
+
+      /* Sigma projects through the matrix cached by the last frame, so anything
+         measured between a camera move and its render would be a step behind.
+         Passing the live camera state makes it recompute. */
+      function project(point) {
+        return sigma.graphToViewport(point, { cameraState: sigma.getCamera().getState() });
+      }
+
+      function pixelsPerUnit() {
+        const origin = project({ x: 0, y: 0 });
+        const unit = project({ x: 1, y: 0 });
+        return Math.hypot(unit.x - origin.x, unit.y - origin.y) || 1;
+      }
+
+      function framed(point) {
+        return sigma.viewportToFramedGraph(project(point), { cameraState: sigma.getCamera().getState() });
+      }
+
+      function reduceNode(key, data) {
+        const index = Number(key.slice(1));
+        const highlight = highlightSet();
+        const next = {
+          x: data.x,
+          y: data.y,
+          size: Math.max(1.5, data.radius * sizeScale),
+          color: data.color,
+          label: data.label,
+          zIndex: 0
+        };
+        if (highlight && !highlight.set.has(index)) {
+          next.color = theme.dim;
+          next.label = "";
+        }
+        if (state.selected && state.selected.itemIndex === index) {
+          next.color = theme.select;
+          next.forceLabel = true;
+          next.zIndex = 2;
+        }
+        return next;
+      }
+
+      function reduceEdge(key, data) {
+        const highlight = highlightSet();
+        const next = { size: data.size, color: data.color };
+        if (!highlight) return next;
+        const link = aggregated[data.link];
+        if (!link || (link.a !== highlight.anchor && link.b !== highlight.anchor)) {
+          next.hidden = true;
+          return next;
+        }
+        next.color = theme.select;
+        next.size = Math.max(data.size, 1.4);
+        return next;
+      }
+
+      function draw() {
+        const box = dimensions();
+        const scale = pixelsPerUnit();
+        const projectXY = function (x, y) { return project({ x: x, y: y }); };
+
+        const ringRatio = fitCanvasToBox(rings, box.width, box.height);
+        ringContext.setTransform(ringRatio, 0, 0, ringRatio, 0, 0);
+        ringContext.clearRect(0, 0, box.width, box.height);
+        paintRings(ringContext, projectXY, scale, box.width, box.height);
+
+        const labelRatio = fitCanvasToBox(labels, box.width, box.height);
+        labelContext.setTransform(labelRatio, 0, 0, labelRatio, 0, 0);
+        labelContext.clearRect(0, 0, box.width, box.height);
+        paintLabels(labelContext, projectXY, scale, box.width, box.height);
+      }
+
+      /* Node sizes have to track the position scale, so they are re-derived once the
+         zoom has drifted far enough to be worth another pass. */
+      function syncSizes() {
+        const scale = pixelsPerUnit() * Math.sqrt(sigma.getCamera().ratio);
+        if (Math.abs(Math.log(scale / sizeScale)) < 0.06) return false;
+        sizeScale = scale;
+        return true;
+      }
+
+      /* Sigma animates the camera with requestAnimationFrame; if those frames stop
+         arriving (background or throttled tab) the move is completed here instead. */
+      function land(target) {
+        if (settleTimer) clearTimeout(settleTimer);
+        settleTimer = setTimeout(function () {
+          settleTimer = null;
+          if (pointerActive) return;
+          sigma.getCamera().setState(target);
+        }, 480);
+      }
+
+      container.addEventListener("pointerdown", function () { pointerActive = true; }, true);
+      window.addEventListener("pointerup", function () { pointerActive = false; }, true);
+      window.addEventListener("pointercancel", function () { pointerActive = false; }, true);
+
+      sigma.on("afterRender", function () {
+        draw();
+        if (syncSizes()) sigma.refresh();
+      });
+      sigma.on("clickNode", function (payload) {
+        const item = items[Number(payload.node.slice(1))];
+        if (item) tapItem(item);
+      });
+      sigma.on("clickStage", function (payload) {
+        const point = sigma.viewportToGraph(
+          { x: payload.event.x, y: payload.event.y },
+          { cameraState: sigma.getCamera().getState() }
+        );
+        tapEmpty(point.x, point.y);
+      });
+      sigma.on("enterNode", function (payload) {
+        hovered = items[Number(payload.node.slice(1))] || null;
+        neighbourItems = null;
+        sigma.refresh();
+      });
+      sigma.on("leaveNode", function () {
+        hovered = null;
+        neighbourItems = null;
+        sigma.refresh();
+      });
+      function sync() {
+        graph.clear();
+        for (let i = 0; i < items.length; i++) {
+          const item = items[i];
+          graph.addNode("i" + i, {
+            x: item.x,
+            y: item.y,
+            radius: item.radius,
+            size: Math.max(1.5, item.radius * sizeScale),
+            color: item.color,
+            label: item.label
+          });
+        }
+        for (let i = 0; i < aggregated.length; i++) {
+          const link = aggregated[i];
+          graph.addEdgeWithKey("e" + i, "i" + link.a, "i" + link.b, {
+            link: i,
+            size: linkWidth(link.count),
+            color: theme.edge
+          });
+        }
+        sigma.refresh();
+      }
+
+      return {
+        kind: "sigma",
+        sync: sync,
+        paint: function () { sigma.refresh(); },
+        resize: function () { sigma.refresh(); },
+        fit: function () {
+          const box = viewBox();
+          if (!box) return;
+          const camera = sigma.getCamera();
+          const view = dimensions();
+          const spanX = Math.max(1, box.maxX - box.minX);
+          const spanY = Math.max(1, box.maxY - box.minY);
+          const wanted = Math.min(view.width / spanX, view.height / spanY) * 0.88;
+          const centre = framed({ x: (box.minX + box.maxX) / 2, y: (box.minY + box.maxY) / 2 });
+          const ratio = Math.max(0.01, Math.min(20, camera.ratio * (pixelsPerUnit() / wanted)));
+          const target = { x: centre.x, y: centre.y, ratio: ratio, angle: camera.angle };
+          camera.animate(target, { duration: 320 });
+          land(target);
+        },
+        panTo: function (x, y) {
+          const camera = sigma.getCamera();
+          const centre = framed({ x: x, y: y });
+          const target = { x: centre.x, y: centre.y, ratio: camera.ratio, angle: camera.angle };
+          camera.animate(target, { duration: 320 });
+          land(target);
+        },
+        zoomTo: function (x, y, radius) {
+          const camera = sigma.getCamera();
+          const centre = framed({ x: x, y: y });
+          const box = dimensions();
+          const wanted = Math.min(box.width, box.height) * 0.4 / Math.max(1, radius);
+          const ratio = Math.max(0.01, Math.min(20, camera.ratio * (pixelsPerUnit() / wanted)));
+          const target = { x: centre.x, y: centre.y, ratio: ratio, angle: camera.angle };
+          camera.animate(target, { duration: 320 });
+          land(target);
+        },
+        zoomBy: function (factor) {
+          const camera = sigma.getCamera();
+          const ratio = Math.max(0.01, Math.min(20, camera.ratio / factor));
+          const target = { x: camera.x, y: camera.y, ratio: ratio, angle: camera.angle };
+          camera.animate(target, { duration: 180 });
+          land(target);
+        }
+      };
+    }
+
+    /* ---------------- built-in canvas renderer ---------------- */
+
+    /* Used when the Sigma.js and Graphology bundles cannot be reached, so the graph
+       still opens offline or behind a proxy that blocks the CDN. */
+    function createCanvasRenderer(container) {
+      const canvas = surfaceCanvas(container, "surface");
+      const context = canvas.getContext("2d");
+      const camera = { x: 0, y: 0, zoom: 1 };
+      const pointers = new Map();
+      let width = 1;
+      let height = 1;
+      let pixelRatio = 1;
+      let queued = false;
+      let gesture = null;
+      let moved = 0;
+      let animation = null;
+      let animationTimer = null;
+      let animationTarget = null;
+
+      function toScreenX(x) { return (x - camera.x) * camera.zoom + width / 2; }
+      function toScreenY(y) { return (y - camera.y) * camera.zoom + height / 2; }
+      function toWorldX(x) { return (x - width / 2) / camera.zoom + camera.x; }
+      function toWorldY(y) { return (y - height / 2) / camera.zoom + camera.y; }
+
+      function resize() {
+        const rect = container.getBoundingClientRect();
+        width = Math.max(1, Math.round(rect.width));
+        height = Math.max(1, Math.round(rect.height));
+        pixelRatio = fitCanvasToBox(canvas, width, height);
+        paint();
+      }
+
+      function paint() {
+        if (queued) return;
+        queued = true;
+        window.requestAnimationFrame(function () {
+          queued = false;
+          draw();
+        });
+      }
+
+      function draw() {
+        context.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
+        context.fillStyle = theme.stage;
+        context.fillRect(0, 0, width, height);
+        const zoom = camera.zoom;
+        const highlight = highlightSet();
+
+        paintRings(context, function (x, y) {
+          return { x: toScreenX(x), y: toScreenY(y) };
+        }, zoom, width, height);
+
+        context.lineCap = "round";
+        for (let i = 0; i < aggregated.length; i++) {
+          const link = aggregated[i];
+          const from = items[link.a];
+          const to = items[link.b];
+          if (!from || !to) continue;
+          if (highlight && link.a !== highlight.anchor && link.b !== highlight.anchor) continue;
+          const x1 = toScreenX(from.x);
+          const y1 = toScreenY(from.y);
+          const x2 = toScreenX(to.x);
+          const y2 = toScreenY(to.y);
+          if ((x1 < 0 && x2 < 0) || (x1 > width && x2 > width)) continue;
+          if ((y1 < 0 && y2 < 0) || (y1 > height && y2 > height)) continue;
+          context.beginPath();
+          context.moveTo(x1, y1);
+          context.lineTo(x2, y2);
+          context.lineWidth = linkWidth(link.count);
+          context.strokeStyle = highlight ? theme.select : theme.edge;
+          context.globalAlpha = highlight ? 0.85 : Math.min(0.6, 0.18 + link.count * 0.02);
+          context.stroke();
+        }
+        context.globalAlpha = 1;
+
+        for (let i = 0; i < items.length; i++) {
+          const item = items[i];
+          const radius = Math.max(1.4, item.radius * zoom);
+          const x = toScreenX(item.x);
+          const y = toScreenY(item.y);
+          if (x + radius < 0 || x - radius > width || y + radius < 0 || y - radius > height) continue;
+          context.beginPath();
+          context.arc(x, y, radius, 0, TAU);
+          context.globalAlpha = highlight && !highlight.set.has(i) ? 0.22 : 1;
+          context.fillStyle = item.color;
+          context.fill();
+          if (item.type !== "node" && radius > 4) {
+            context.lineWidth = 1;
+            context.strokeStyle = theme.halo;
+            context.stroke();
+          }
+          context.globalAlpha = 1;
+          if ((state.selected && state.selected.itemIndex === i) || hovered === item) {
+            context.beginPath();
+            context.arc(x, y, radius + 3.5, 0, TAU);
+            context.lineWidth = 2;
+            context.strokeStyle = theme.select;
+            context.stroke();
+          }
+        }
+
+        paintLabels(context, function (x, y) {
+          return { x: toScreenX(x), y: toScreenY(y) };
+        }, zoom, width, height);
+      }
+
+      function clampZoom(zoom) {
+        return Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, zoom));
+      }
+
+      function stopAnimation() {
+        if (animation) {
+          cancelAnimationFrame(animation);
+          animation = null;
+        }
+        if (animationTimer) {
+          clearTimeout(animationTimer);
+          animationTimer = null;
+        }
+      }
+
+      /* Land on the pending destination immediately (superseded move, reduced motion,
+         or a tab whose frames stopped arriving). */
+      function settleCamera() {
+        stopAnimation();
+        if (!animationTarget) return;
+        camera.x = animationTarget.x;
+        camera.y = animationTarget.y;
+        camera.zoom = animationTarget.zoom;
+        animationTarget = null;
+        paint();
+      }
+
+      /* Hand control back to the user without finishing the move. */
+      function cancelCameraMove() {
+        stopAnimation();
+        animationTarget = null;
+      }
+
+      function animateTo(x, y, zoom) {
+        settleCamera();
+        animationTarget = { x: x, y: y, zoom: zoom };
+        if (reducedMotion.matches) {
+          settleCamera();
+          return;
+        }
+        const from = { x: camera.x, y: camera.y, zoom: camera.zoom };
+        const start = performance.now();
+        const duration = 320;
+        const step = function (now) {
+          const t = Math.min(1, Math.max(0, (now - start) / duration));
+          const eased = t < 0.5 ? 2 * t * t : -1 + (4 - 2 * t) * t;
+          camera.x = from.x + (x - from.x) * eased;
+          camera.y = from.y + (y - from.y) * eased;
+          camera.zoom = from.zoom * Math.pow(zoom / from.zoom, eased);
+          draw();
+          if (t < 1) {
+            animation = requestAnimationFrame(step);
+            return;
+          }
+          animation = null;
+          animationTarget = null;
+          if (animationTimer) {
+            clearTimeout(animationTimer);
+            animationTimer = null;
+          }
+        };
+        animation = requestAnimationFrame(step);
+        animationTimer = setTimeout(settleCamera, duration + 150);
+      }
+
+      function itemAt(screenX, screenY) {
+        let best = null;
+        let bestDistance = Infinity;
+        for (let i = 0; i < items.length; i++) {
+          const item = items[i];
+          const distance = Math.hypot(toScreenX(item.x) - screenX, toScreenY(item.y) - screenY);
+          const reach = Math.max(item.radius * camera.zoom, 9) + 4;
+          if (distance <= reach && distance < bestDistance) {
+            best = item;
+            bestDistance = distance;
+          }
+        }
+        return best;
+      }
+
+      canvas.addEventListener("pointerdown", function (event) {
+        cancelCameraMove();
+        canvas.setPointerCapture(event.pointerId);
+        pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+        moved = 0;
+        if (pointers.size === 2) {
+          const points = Array.from(pointers.values());
+          gesture = {
+            distance: Math.hypot(points[0].x - points[1].x, points[0].y - points[1].y),
+            zoom: camera.zoom
+          };
+        }
+      });
+
+      canvas.addEventListener("pointermove", function (event) {
+        const previous = pointers.get(event.pointerId);
+        if (!previous) {
+          if (event.pointerType === "mouse") {
+            const rect = canvas.getBoundingClientRect();
+            const item = itemAt(event.clientX - rect.left, event.clientY - rect.top);
+            if (item !== hovered) {
+              hovered = item;
+              neighbourItems = null;
+              canvas.style.cursor = item ? "pointer" : "grab";
+              paint();
+            }
+          }
+          return;
+        }
+        const dx = event.clientX - previous.x;
+        const dy = event.clientY - previous.y;
+        previous.x = event.clientX;
+        previous.y = event.clientY;
+        moved += Math.abs(dx) + Math.abs(dy);
+        if (pointers.size === 2 && gesture) {
+          const points = Array.from(pointers.values());
+          const distance = Math.hypot(points[0].x - points[1].x, points[0].y - points[1].y);
+          if (gesture.distance > 0) camera.zoom = clampZoom(gesture.zoom * (distance / gesture.distance));
+          camera.x -= dx / camera.zoom / 2;
+          camera.y -= dy / camera.zoom / 2;
+        } else if (pointers.size === 1) {
+          camera.x -= dx / camera.zoom;
+          camera.y -= dy / camera.zoom;
+        }
+        paint();
+      });
+
+      function endPointer(event) {
+        if (!pointers.has(event.pointerId)) return;
+        pointers.delete(event.pointerId);
+        if (pointers.size < 2) gesture = null;
+        if (pointers.size === 0 && moved < 12) {
+          const rect = canvas.getBoundingClientRect();
+          const x = event.clientX - rect.left;
+          const y = event.clientY - rect.top;
+          const item = itemAt(x, y);
+          if (item) tapItem(item);
+          else tapEmpty(toWorldX(x), toWorldY(y));
+        }
+      }
+
+      canvas.addEventListener("pointerup", endPointer);
+      canvas.addEventListener("pointercancel", endPointer);
+
+      canvas.addEventListener("wheel", function (event) {
+        event.preventDefault();
+        cancelCameraMove();
+        const rect = canvas.getBoundingClientRect();
+        const px = event.clientX - rect.left;
+        const py = event.clientY - rect.top;
+        const beforeX = toWorldX(px);
+        const beforeY = toWorldY(py);
+        camera.zoom = clampZoom(camera.zoom * (event.deltaY < 0 ? 1.14 : 1 / 1.14));
+        camera.x += beforeX - toWorldX(px);
+        camera.y += beforeY - toWorldY(py);
+        paint();
+      }, { passive: false });
+
+      resize();
+
+      return {
+        kind: "canvas",
+        sync: paint,
+        paint: paint,
+        resize: resize,
+        fit: function () {
+          const box = viewBox();
+          if (!box) return;
+          const spanX = Math.max(1, box.maxX - box.minX);
+          const spanY = Math.max(1, box.maxY - box.minY);
+          animateTo(
+            (box.minX + box.maxX) / 2,
+            (box.minY + box.maxY) / 2,
+            clampZoom(Math.min(width / spanX, height / spanY) * 0.92)
+          );
+        },
+        panTo: function (x, y) { animateTo(x, y, camera.zoom); },
+        zoomTo: function (x, y, radius) {
+          animateTo(x, y, clampZoom(Math.min(width, height) * 0.4 / Math.max(1, radius)));
+        },
+        zoomBy: function (factor) {
+          cancelCameraMove();
+          camera.zoom = clampZoom(camera.zoom * factor);
+          paint();
+        }
+      };
+    }
+
+    function startRenderer() {
+      graphContainer.textContent = "";
+      try {
+        renderer = createSigmaRenderer(graphContainer);
+      } catch (error) {
+        console.warn("Falling back to the built-in renderer:", error);
+        graphContainer.textContent = "";
+        rendererNotice = error.message || String(error);
+        renderer = createCanvasRenderer(graphContainer);
+      }
+      graphContainer.dataset.renderer = renderer.kind;
+    }
+
+    function requestDraw() {
+      if (renderer) renderer.paint();
+    }
+
+    function resize() {
+      if (renderer) renderer.resize();
+    }
+
+    function fitAll() {
+      if (renderer) renderer.fit();
+    }
+
+    function zoomBy(factor) {
+      if (renderer) renderer.zoomBy(factor);
+    }
+
+    function zoomToItem(x, y, radius) {
+      if (renderer) renderer.zoomTo(x, y, radius);
+    }
+
+    function zoomToCluster(cluster) {
+      for (let i = 0; i < containers.length; i++) {
+        if (containers[i].cluster === cluster) {
+          zoomToItem(containers[i].x, containers[i].y, containers[i].radius);
+          return true;
+        }
+      }
+      for (let i = 0; i < items.length; i++) {
+        if (items[i].type === "cluster" && items[i].index === cluster) {
+          zoomToItem(items[i].x, items[i].y, Math.max(6, items[i].radius));
+          return true;
+        }
+      }
+      return false;
+    }
+
+    /* ---------------- expansion ---------------- */
+
+    function expandCluster(cluster, options) {
+      if (state.expanded.has(cluster)) return;
+      /* A folder whose content sits almost entirely in one sub-folder reveals nothing
+         when opened, so keep descending that path until the level has real structure. */
+      let current = cluster;
+      for (let guard = 0; guard < 8; guard++) {
+        if (state.expanded.has(current)) break;
+        state.expanded.add(current);
+        state.expansionOrder.push(current);
+        const kids = childrenOf(current);
+        const biggest = kids.filter(function (kid) {
+          return kid.type === "cluster" && kid.weight > 1;
+        })[0];
+        if (!biggest) break;
+        let total = 0;
+        for (let i = 0; i < kids.length; i++) total += kids[i].weight;
+        if (kids.length > 1 && biggest.weight < total * 0.7) break;
+        current = biggest.index;
+      }
+      rebuild();
+      if (!options || options.zoom !== false) zoomToCluster(cluster);
+    }
+
+    function collapseCluster(cluster) {
+      if (!state.expanded.has(cluster)) return;
+      const drop = [cluster];
+      state.expanded.forEach(function (other) {
+        if (other !== cluster && ancestry(other).indexOf(cluster) >= 0) drop.push(other);
+      });
+      drop.forEach(function (c) {
+        state.expanded.delete(c);
+        state.capBoost.delete(c);
+      });
+      state.revealNode = -1;
+      state.expansionOrder = state.expansionOrder.filter(function (c) { return state.expanded.has(c); });
+      if (state.selected && state.selected.type !== "container") state.selected = null;
+      rebuild();
+      zoomToCluster(cluster);
+    }
+
+    function collapseLast() {
+      const last = state.expansionOrder[state.expansionOrder.length - 1];
+      if (last === undefined) {
+        fitAll();
+        return;
+      }
+      collapseCluster(last);
+    }
+
+    function reveal(node, options) {
+      state.focusNode = -1;
+      state.revealNode = node;
+      const chain = ancestry(nodeCluster[node]);
+      chain.forEach(function (cluster) {
+        if (!state.expanded.has(cluster)) {
+          state.expanded.add(cluster);
+          state.expansionOrder.push(cluster);
+        }
+      });
+      rebuild();
+      const item = items[representative[node]];
+      if (item) selectItem(item);
+      /* Frame the file the symbol lives in: close enough to read, wide enough for context. */
+      if (!zoomToCluster(chain[chain.length - 1]) && item) {
+        zoomToItem(item.x, item.y, Math.max(10, item.radius * 8));
+      }
+      if (options && options.openPanel) openPanel();
+    }
+
+    function selectItem(item) {
+      state.selected = item;
+      neighbourItems = null;
+      renderPanel();
+      requestDraw();
+    }
+
+    /* ---------------- chrome ---------------- */
+
+    const countsEl = document.getElementById("counts");
+    const hudEl = document.getElementById("hud");
+    const crumbsEl = document.getElementById("crumbs");
+    const selectedEl = document.getElementById("selected");
+    const actionsEl = document.getElementById("actions");
+    const connectionsEl = document.getElementById("connections");
+    const connectionsTitle = document.getElementById("connections-title");
+    const legendEl = document.getElementById("legend");
+    const searchEl = document.getElementById("search");
+    const resultsEl = document.getElementById("results");
+    const relationEl = document.getElementById("relation");
+    const confidenceEl = document.getElementById("confidence");
+    const detailEl = document.getElementById("detail");
+    const panel = document.getElementById("panel");
+    const panelToggle = document.getElementById("panel-toggle");
+    const filters = document.getElementById("filters");
+    const filtersToggle = document.getElementById("filters-toggle");
+
+    function element(tag, className, text) {
+      const node = document.createElement(tag);
+      if (className) node.className = className;
+      if (text !== undefined) node.textContent = text;
+      return node;
+    }
+
+    function formatNumber(value) {
+      return Number(value || 0).toLocaleString();
+    }
+
+    countsEl.textContent = formatNumber(summary.nodes || nodeCount) + " symbols · "
+      + formatNumber(summary.edges || edgeCount) + " links · "
+      + formatNumber(summary.source_files || pathVocabulary.length) + " files";
+
+    function openPanel() {
+      panel.classList.add("open");
+      panelToggle.setAttribute("aria-expanded", "true");
+    }
+
+    function renderChrome() {
+      const groups = items.filter(function (item) { return item.type !== "node"; }).length;
+      const symbols = items.length - groups;
+      const parts = [];
+      if (state.focusNode >= 0) {
+        parts.push("Focus on " + nodeLabel[state.focusNode] + " · " + state.focusDepth + " hop"
+          + (state.focusDepth > 1 ? "s" : "") + " · " + items.length + " symbols");
+      } else {
+        parts.push(groups + " group" + (groups === 1 ? "" : "s") + " · " + symbols + " symbol"
+          + (symbols === 1 ? "" : "s") + " shown");
+      }
+      parts.push(formatNumber(aggregated.length) + " link" + (aggregated.length === 1 ? "" : "s"));
+      if (hiddenLinks) parts.push(formatNumber(hiddenLinks) + " weaker links hidden");
+      if (rendererNotice) parts.push("built-in renderer: " + rendererNotice);
+      hudEl.textContent = parts.join(" · ");
+      renderCrumbs();
+      renderPanel();
+    }
+
+    function renderCrumbs() {
+      crumbsEl.textContent = "";
+      if (state.focusNode >= 0) {
+        const back = element("button", null, "← Back to map");
+        back.addEventListener("click", function () { clearFocus(); });
+        crumbsEl.appendChild(back);
+        return;
+      }
+      const deepest = state.expansionOrder[state.expansionOrder.length - 1];
+      if (deepest === undefined) return;
+      const chain = ancestry(deepest);
+      const home = element("button", null, "All modules");
+      home.addEventListener("click", function () {
+        state.expanded.clear();
+        state.expansionOrder = [];
+        state.capBoost.clear();
+        state.revealNode = -1;
+        rebuild({ fit: true });
+      });
+      crumbsEl.appendChild(home);
+      chain.forEach(function (cluster) {
+        const crumb = element("button", null, displayLabel[cluster]);
+        crumb.addEventListener("click", function () { collapseCluster(cluster); });
+        crumbsEl.appendChild(crumb);
+      });
+    }
+
+    function relationNames(mask) {
+      const names = [];
+      for (let i = 0; i < relationVocabulary.length && i < 30; i++) {
+        if (mask & (1 << i)) names.push(relationVocabulary[i]);
+      }
+      return names;
+    }
+
+    function renderPanel() {
+      selectedEl.textContent = "";
+      actionsEl.textContent = "";
+      connectionsEl.textContent = "";
+      const selected = state.selected;
+      if (!selected) {
+        selectedEl.appendChild(element("div", "hint", "Nothing selected. Tap a bubble on the map."));
+        connectionsTitle.textContent = "Connections";
+        return;
+      }
+      if (selected.type === "node") renderNodePanel(selected);
+      else if (selected.type === "cluster" || selected.type === "container") renderClusterPanel(selected);
+      else renderMorePanel(selected);
+    }
+
+    function addAction(label, handler, primary) {
+      const button = element("button", primary ? "primary" : null, label);
+      button.addEventListener("click", handler);
+      actionsEl.appendChild(button);
+      return button;
+    }
+
+    function renderNodePanel(item) {
+      const node = item.index;
+      const box = element("div");
+      box.appendChild(element("div", "name", nodeLabel[node]));
+      const kind = kindVocabulary[nodeKind[node]] || "symbol";
+      const path = pathVocabulary[nodePath[node]] || "(no source file)";
+      box.appendChild(element("div", "meta", kind + " · " + degree[node] + " link"
+        + (degree[node] === 1 ? "" : "s")));
+      box.appendChild(element("div", "meta", path));
+      const idLine = element("div", "idline");
+      idLine.appendChild(element("code", null, nodeId[node]));
+      const copy = element("button", null, "Copy id");
+      copy.addEventListener("click", function () {
+        if (navigator.clipboard) {
+          navigator.clipboard.writeText(nodeId[node]).then(function () {
+            copy.textContent = "Copied";
+            setTimeout(function () { copy.textContent = "Copy id"; }, 1200);
+          }, function () { copy.textContent = "Copy failed"; });
+        }
+      });
+      idLine.appendChild(copy);
+      box.appendChild(idLine);
+      selectedEl.appendChild(box);
+
+      if (state.focusNode === node) {
+        addAction(state.focusDepth === 1 ? "Widen to 2 hops" : "Narrow to 1 hop", function () {
+          state.focusDepth = state.focusDepth === 1 ? 2 : 1;
+          rebuild({ fit: true });
+        });
+        addAction("Back to map", clearFocus, true);
+      } else {
+        addAction("Focus neighbourhood", function () {
+          state.focusNode = node;
+          state.focusDepth = 1;
+          rebuild({ fit: true });
+          selectItem(items[representative[node]] || null);
+        }, true);
+      }
+
+      connectionsTitle.textContent = "Connections (" + degree[node] + ")";
+      const seen = new Map();
+      for (let a = adjacencyStart[node]; a < adjacencyStart[node + 1]; a++) {
+        const edge = adjacencyEdge[a];
+        if (state.relation >= 0 && edgeRelation[edge] !== state.relation) continue;
+        if (state.confidence >= 0 && edgeConfidence[edge] !== state.confidence) continue;
+        const other = adjacencyNode[a];
+        const outgoing = edgeSource[edge] === node;
+        const key = other + ":" + edgeRelation[edge] + ":" + (outgoing ? 1 : 0);
+        if (seen.has(key)) continue;
+        seen.set(key, { other: other, relation: edgeRelation[edge], outgoing: outgoing });
+      }
+      const list = Array.from(seen.values()).sort(function (a, b) { return degree[b.other] - degree[a.other]; });
+      if (!list.length) {
+        connectionsEl.appendChild(element("div", "hint", "No connections match the current filters."));
+        return;
+      }
+      list.slice(0, 40).forEach(function (entry) {
+        const button = element("button");
+        button.appendChild(document.createTextNode((entry.outgoing ? "→ " : "← ")
+          + nodeLabel[entry.other]));
+        button.appendChild(element("span", "sub", relationVocabulary[entry.relation] + " · "
+          + (pathVocabulary[nodePath[entry.other]] || "(no source file)")));
+        button.addEventListener("click", function () {
+          if (state.focusNode >= 0) {
+            state.focusNode = entry.other;
+            rebuild({ fit: true });
+            selectItem(items[representative[entry.other]] || null);
+          } else {
+            reveal(entry.other);
+          }
+        });
+        connectionsEl.appendChild(button);
+      });
+      if (list.length > 40) {
+        connectionsEl.appendChild(element("div", "hint", (list.length - 40) + " more not shown."));
+      }
+    }
+
+    function renderClusterPanel(item) {
+      const cluster = item.index;
+      const box = element("div");
+      box.appendChild(element("div", "name", displayLabel[cluster] || "(root)"));
+      box.appendChild(element("div", "meta", (clusterKind[displayTarget[cluster]] === "file" ? "file" : "folder")
+        + " · " + formatNumber(clusterWeight[cluster]) + " symbols"));
+      box.appendChild(element("div", "meta", displayPath(cluster)));
+      selectedEl.appendChild(box);
+
+      const expanded = state.expanded.has(cluster);
+      if (expanded) addAction("Collapse", function () { collapseCluster(cluster); }, true);
+      else if (childrenOf(cluster).length) addAction("Open", function () { expandCluster(cluster); }, true);
+      addAction("Zoom to", function () { zoomToCluster(cluster); });
+
+      connectionsTitle.textContent = "Linked groups";
+      const itemIndex = item.itemIndex;
+      if (itemIndex === undefined) {
+        connectionsEl.appendChild(element("div", "hint", "Collapse this group to see its aggregated links."));
+        return;
+      }
+      const partners = [];
+      for (let i = 0; i < aggregated.length; i++) {
+        const link = aggregated[i];
+        if (link.a === itemIndex) partners.push({ other: link.b, link: link });
+        else if (link.b === itemIndex) partners.push({ other: link.a, link: link });
+      }
+      if (!partners.length) {
+        connectionsEl.appendChild(element("div", "hint", "No links to other visible groups."));
+        return;
+      }
+      partners.slice(0, 25).forEach(function (entry) {
+        const other = items[entry.other];
+        if (!other) return;
+        const button = element("button");
+        button.appendChild(document.createTextNode(other.label));
+        button.appendChild(element("span", "sub", entry.link.count + " link"
+          + (entry.link.count === 1 ? "" : "s") + " · " + relationNames(entry.link.relations).join(", ")));
+        button.addEventListener("click", function () {
+          selectItem(other);
+          if (renderer) renderer.panTo(other.x, other.y);
+        });
+        connectionsEl.appendChild(button);
+      });
+    }
+
+    function renderMorePanel(item) {
+      const box = element("div");
+      box.appendChild(element("div", "name", item.hidden + " hidden entries"));
+      box.appendChild(element("div", "meta", formatNumber(item.weight)
+        + " symbols rolled up to keep the view readable"));
+      selectedEl.appendChild(box);
+      addAction("Show more", function () {
+        state.capBoost.set(item.owner, (state.capBoost.get(item.owner) || 1) * 3);
+        state.selected = null;
+        rebuild();
+      }, true);
+      connectionsTitle.textContent = "Connections";
+      connectionsEl.appendChild(element("div", "hint",
+        "Raise the Detail setting or open this group to see individual items."));
+    }
+
+    function renderLegend() {
+      legendEl.textContent = "";
+      moduleClusters.slice(0, 40).forEach(function (cluster) {
+        const button = element("button");
+        const swatch = element("span", "swatch");
+        swatch.style.background = moduleColor.get(cluster);
+        button.appendChild(swatch);
+        button.appendChild(document.createTextNode(displayLabel[cluster] || clusterName[cluster]));
+        button.appendChild(element("span", "sub", formatNumber(clusterWeight[cluster]) + " symbols"));
+        button.addEventListener("click", function () {
+          clearFocus(true);
+          if (!state.expanded.has(cluster)) expandCluster(cluster);
+          else zoomToCluster(cluster);
+        });
+        legendEl.appendChild(button);
+      });
+    }
+
+    function clearFocus(silent) {
+      if (state.focusNode < 0) {
+        if (!silent) rebuild();
+        return;
+      }
+      const node = state.focusNode;
+      state.focusNode = -1;
+      state.selected = null;
+      rebuild({ fit: true });
+      if (!silent) reveal(node);
+    }
+
+    /* ---------------- controls ---------------- */
+
+    function fillSelect(select, options) {
+      select.textContent = "";
+      options.forEach(function (option) {
+        const choice = document.createElement("option");
+        choice.value = String(option.value);
+        choice.textContent = option.label;
+        select.appendChild(choice);
+      });
+    }
+
+    fillSelect(relationEl, [{ value: -1, label: "All relations" }].concat(
+      relationVocabulary.map(function (name, i) { return { value: i, label: name }; })
+    ));
+    fillSelect(confidenceEl, [{ value: -1, label: "All confidence" }].concat(
+      confidenceVocabulary.map(function (name, i) { return { value: i, label: name.toLowerCase() }; })
+    ));
+    fillSelect(detailEl, [
+      { value: "low", label: "Detail: low" },
+      { value: "medium", label: "Detail: medium" },
+      { value: "high", label: "Detail: high" }
+    ]);
+    detailEl.value = state.detail;
+
+    relationEl.addEventListener("change", function () {
+      state.relation = Number(relationEl.value);
+      rebuild();
+    });
+    confidenceEl.addEventListener("change", function () {
+      state.confidence = Number(confidenceEl.value);
+      rebuild();
+    });
+    detailEl.addEventListener("change", function () {
+      state.detail = detailEl.value;
+      state.capBoost.clear();
+      rebuild();
+    });
+    document.getElementById("fit").addEventListener("click", fitAll);
+    document.getElementById("reset").addEventListener("click", function () {
+      state.expanded.clear();
+      state.expansionOrder = [];
+      state.capBoost.clear();
+      state.focusNode = -1;
+      state.revealNode = -1;
+      state.selected = null;
+      state.relation = -1;
+      state.confidence = -1;
+      relationEl.value = "-1";
+      confidenceEl.value = "-1";
+      searchEl.value = "";
+      hideResults();
+      autoExpand();
+      rebuild({ fit: true });
+    });
+    document.getElementById("zoom-in").addEventListener("click", function () { zoomBy(1.35); });
+    document.getElementById("zoom-out").addEventListener("click", function () { zoomBy(1 / 1.35); });
+    document.getElementById("zoom-up").addEventListener("click", collapseLast);
+    panelToggle.addEventListener("click", function () {
+      const open = panel.classList.toggle("open");
+      panelToggle.setAttribute("aria-expanded", open ? "true" : "false");
+    });
+    filtersToggle.addEventListener("click", function () {
+      const open = filters.classList.toggle("open");
+      filtersToggle.setAttribute("aria-expanded", open ? "true" : "false");
+    });
+
+    /* ---------------- search ---------------- */
+
+    const lowerLabel = nodeLabel.map(function (value) { return value.toLowerCase(); });
+    const lowerPath = pathVocabulary.map(function (value) { return value.toLowerCase(); });
+    let searchTimer = null;
+
+    function hideResults() {
+      resultsEl.hidden = true;
+      resultsEl.textContent = "";
+    }
+
+    function runSearch() {
+      const term = searchEl.value.trim().toLowerCase();
+      if (term.length < 2) {
+        hideResults();
+        return;
+      }
+      const matches = [];
+      for (let n = 0; n < nodeCount && matches.length < 400; n++) {
+        const label = lowerLabel[n];
+        let score = -1;
+        if (label === term) score = 0;
+        else if (label.indexOf(term) === 0) score = 1;
+        else if (label.indexOf(term) > 0) score = 2;
+        else if (lowerPath[nodePath[n]].indexOf(term) >= 0) score = 3;
+        if (score >= 0) matches.push({ node: n, score: score });
+      }
+      matches.sort(function (a, b) {
+        return a.score !== b.score ? a.score - b.score : degree[b.node] - degree[a.node];
+      });
+      resultsEl.textContent = "";
+      resultsEl.hidden = false;
+      if (!matches.length) {
+        resultsEl.appendChild(element("div", "empty", "No symbol or file matches “" + searchEl.value + "”"));
+        return;
+      }
+      matches.slice(0, 40).forEach(function (match) {
+        const button = element("button");
+        button.appendChild(document.createTextNode(nodeLabel[match.node]));
+        button.appendChild(element("span", "sub", (pathVocabulary[nodePath[match.node]] || "(no source file)")
+          + " · " + degree[match.node] + " links"));
+        button.addEventListener("click", function () {
+          hideResults();
+          searchEl.blur();
+          reveal(match.node, { openPanel: true });
+        });
+        resultsEl.appendChild(button);
+      });
+      if (matches.length > 40) {
+        resultsEl.appendChild(element("div", "empty", "Showing 40 of " + matches.length + " matches"));
+      }
+    }
+
+    searchEl.addEventListener("input", function () {
+      if (searchTimer) clearTimeout(searchTimer);
+      searchTimer = setTimeout(runSearch, 140);
+    });
+    searchEl.addEventListener("focus", function () {
+      if (searchEl.value.trim().length >= 2) runSearch();
+    });
+    document.addEventListener("click", function (event) {
+      if (!resultsEl.hidden && !resultsEl.contains(event.target) && event.target !== searchEl) hideResults();
+    });
+    document.addEventListener("keydown", function (event) {
+      if (event.key === "Escape") {
+        hideResults();
+        if (state.focusNode >= 0) clearFocus(true);
+      }
+    });
+
+    /* ---------------- taps ---------------- */
+
+    function tapItem(item) {
+      if (item.type === "cluster" && !state.expanded.has(item.index) && childrenOf(item.index).length) {
+        selectItem(item);
+        expandCluster(item.index);
+        return;
+      }
+      selectItem(item);
+      if (window.matchMedia("(max-width: 900px)").matches) openPanel();
+    }
+
+    function tapEmpty(worldX, worldY) {
+      const container = containerAtWorld(worldX, worldY);
+      if (container) {
+        selectItem({ type: "container", index: container.cluster });
+        if (window.matchMedia("(max-width: 900px)").matches) openPanel();
+        return;
+      }
+      selectItem(null);
+    }
+
+    /* ---------------- start ---------------- */
+
+    function autoExpand() {
+      for (let guard = 0; guard < 6; guard++) {
+        buildHierarchyView();
+        if (items.length >= 8) break;
+        const candidate = items
+          .filter(function (item) { return item.type === "cluster" && !state.expanded.has(item.index); })
+          .sort(function (a, b) { return b.weight - a.weight; })[0];
+        if (!candidate) break;
+        state.expanded.add(candidate.index);
+        state.expansionOrder.push(candidate.index);
+      }
+    }
+
+    readTheme();
+    if (window.matchMedia) {
+      const scheme = window.matchMedia("(prefers-color-scheme: dark)");
+      const onSchemeChange = function () {
+        readTheme();
+        if (renderer) renderer.sync();
+      };
+      if (scheme.addEventListener) scheme.addEventListener("change", onSchemeChange);
+      else if (scheme.addListener) scheme.addListener(onSchemeChange);
+    }
+    if (window.ResizeObserver) new ResizeObserver(resize).observe(stage);
+    else window.addEventListener("resize", resize);
+    window.addEventListener("orientationchange", resize);
+
+    startRenderer();
+    resize();
+    autoExpand();
+    renderLegend();
+    rebuild({ fit: true });
+  })();
+  </script>
+</body>
+</html>
